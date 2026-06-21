@@ -58,7 +58,7 @@ yolo export model=models/yolo26s.pt format=engine device=0 half=True
 Убедитесь, что в файле `config.py` указан правильный путь к скомпилированной модели:
 
 ```python
-MODEL_PATH = "../models/yolo26s.engine"
+MODEL_PATH = "../../models/yolo26s.engine"
 ```
 
 ### 4. Настройка Telegram-бота
