@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .filters {
+        background: #2d2d2d; padding: 15px; border-radius: 10px; margin-bottom: 20px;
+        display: flex; gap: 15px; flex-wrap: wrap; align-items: center;
+    }
+    .filters select {
+        padding: 8px; background: #333; color: white; border: 1px solid #555; border-radius: 5px; outline: none;
+    }
+    .gallery {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;
+    }
+    .img-card {
+        background: #222; padding: 10px; border-radius: 5px; text-align: center;
+    }
+    .img-card img {
+        width: 100%; border-radius: 5px; cursor: pointer; transition: 0.2s;
+    }
+    .img-card img:hover { transform: scale(1.02); }
+    .meta-info { margin-top: 10px; font-size: 13px; color: #ddd; text-align: left;}
+    .meta-info span { color: #4fc3f7; font-weight: bold; }
+</style>
+
+<div class="camera-box">
+    <h2>Архив нарушений</h2>
+
+    <div class="filters">
+        <label>Камера:</label>
+        <select id="filter-cam" onchange="applyFilters()">
+            <option value="all">Все камеры</option>
+            <!-- БЫЛО: for c_id, c in cameras.items() -->
+            <!-- СТАЛО: -->
+            {% for cid, cname in hist_cameras.items() %}
+            <option value="{{ cid }}">{{ cname }}</option>
+            {% endfor %}
+        </select>
+
+        <label>Дата:</label>
+        <select id="filter-date" onchange="applyFilters()">
+            <option value="all">Все дни</option>
+            {% for d in dates %}
+            <option value="{{ d }}">{{ d }}</option>
+            {% endfor %}
+        </select>
+
+        <label>Объект:</label>
+        <select id="filter-class" onchange="applyFilters()">
+            <option value="all">Все объекты</option>
+            {% for cls in classes %}
+            <option value="{{ cls }}">{{ cls }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="gallery" id="gallery">
+        {% for file in files %}
+        <div class="img-card" data-cam="{{ file.cam_id }}" data-date="{{ file.date }}" data-class="{{ file.label }}">
+            <a href="/static/violations/{{ file.filename }}" target="_blank">
+                <img src="/static/violations/{{ file.filename }}" loading="lazy">
+            </a>
+            <div class="meta-info">
+                <span>{{ file.cam_name }}</span><br>
+                {{ file.date }} в {{ file.time }}<br>
+                Объект: <span>{{ file.label }}</span><br>
+                В зоне: <span style="color: #ff5252;">{{ file.duration }} сек.</span>
+            </div>
+        </div>
+        {% else %}
+        <p style="color: #888; grid-column: 1 / -1;">Фотографий пока нет.</p>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+    function applyFilters() {
+        const fCam = document.getElementById('filter-cam').value;
+        const fDate = document.getElementById('filter-date').value;
+        const fClass = document.getElementById('filter-class').value;
+
+        const cards = document.querySelectorAll('.img-card');
+
+        cards.forEach(card => {
+            const matchCam = (fCam === 'all' || card.getAttribute('data-cam') === fCam);
+            const matchDate = (fDate === 'all' || card.getAttribute('data-date') === fDate);
+            const matchClass = (fClass === 'all' || card.getAttribute('data-class') === fClass);
+
+            if (matchCam && matchDate && matchClass) {
+                card.style.display = 'block';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    }
+</script>
+{% endblock %}

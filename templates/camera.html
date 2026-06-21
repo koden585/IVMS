@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .video-container { position: relative; background: black; border-radius: 5px; overflow: hidden; display: inline-block; width: 100%;}
+    canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
+    img { width: 100%; display: block; }
+    .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px; }
+    .panel { background: #222; padding: 15px; border-radius: 5px; }
+    .form-group { margin-bottom: 10px; }
+    .form-group input[type="text"] { width: 100%; padding: 8px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; }
+    .checkbox-group { display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap; }
+    .zone-item { background: #333; padding: 10px; border-radius: 5px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #00a5ff; }
+</style>
+
+<div class="camera-box">
+    <div class="header">
+        <div>
+            <h2>{{ camera.name }}</h2>
+            <div style="font-size: 13px; color: #888; margin-top: 5px;">Активных зон: {{ camera.zones|length }}</div>
+        </div>
+    </div>
+
+    <!-- Модуль рисования (Overlay Canvas) -->
+    <div class="video-container">
+        <!-- Видеопоток, на котором сервер уже рисует сохраненные зоны -->
+        <img id="video" src="/video_feed/{{ cam_id }}" crossorigin="anonymous" onerror="this.src=''; this.alt='Нет сигнала';">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="controls-grid">
+        <!-- Панель создания зоны -->
+        <div class="panel">
+            <h3>Нарисовать новую зону</h3>
+            <p style="font-size:12px; color:#aaa;">Кликните ЛКМ на видео, ПКМ для завершения.</p>
+
+            <div class="form-group">
+                <input type="text" id="zone_name" placeholder="Название зоны (например: Парковка)">
+            </div>
+
+            <label style="color:#aaa; font-size:12px; display:block; margin-bottom:5px;">Кого фиксировать в этой зоне:</label>
+            <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+                <label>Цвет зоны:</label>
+                <input type="color" id="zone_color" value="#00a5ff" style="padding: 0; width: 40px; height: 30px;">
+                <label style="margin-left: 15px;">Лимит (сек):</label>
+                <input type="number" id="zone_time" value="5" style="width: 60px;">
+            </div>
+
+            <div class="checkbox-group">
+                <label><input type="checkbox" class="cls-checkbox" value="0" checked> Людей</label>
+                <label><input type="checkbox" class="cls-checkbox" value="2"> Легковые</label>
+            </div>
+
+            <button onclick="saveZone()">Сохранить выделенную зону</button>
+            <button onclick="clearDrawing()" class="red">Сбросить чертеж</button>
+        </div>
+
+        <!-- Список существующих зон -->
+        <div class="panel">
+            <h3>Существующие зоны</h3>
+            <div id="zones-list">
+                {% for z in camera.zones %}
+                <div class="zone-item">
+                    <div>
+                        <strong>{{ z.name }}</strong><br>
+                        <span style="font-size: 11px; color: #aaa;">Классы: {{ z.classes|join(', ') }} | Лимит: {{ z.alert_seconds }}с</span>
+                    </div>
+                    <button class="red" onclick="deleteZone({{ z.id }})" style="padding: 5px 10px;">X</button>
+                </div>
+                {% else %}
+                <p style="color: #666; font-size: 14px;">Зон пока нет. Нарисуйте первую зону.</p>
+                {% endfor %}
+            </div>
+
+            <div class="stats" id="stats" style="margin-top: 15px; font-size: 13px; color: #aaa;">Загрузка статистики...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const camId = "{{ cam_id }}";
+    const canvas = document.getElementById('canvas');
+    const video = document.getElementById('video');
+    const ctx = canvas.getContext('2d');
+
+    let points = [];
+    let isDrawing = false;
+
+    // Масштабирование Canvas под размер видео
+    video.onload = function() {
+        const rect = video.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+
+    window.addEventListener('resize', () => {
+        if(video.complete) video.onload();
+    });
+
+    canvas.addEventListener('mousedown', function(e) {
+        if (!isDrawing) {
+            points = [];
+            isDrawing = true;
+        }
+        const rect = canvas.getBoundingClientRect();
+        points.push([e.clientX - rect.left, e.clientY - rect.top]);
+        drawPolygon();
+    });
+
+    canvas.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        if (isDrawing && points.length >= 3) {
+            isDrawing = false;
+            drawPolygon();
+        }
+    });
+
+    canvas.addEventListener('dblclick', function(e) {
+        if (isDrawing && points.length >= 3) {
+            isDrawing = false;
+            drawPolygon();
+        }
+    });
+
+    canvas.addEventListener('mousemove', function(e) {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        drawPolygon([e.clientX - rect.left, e.clientY - rect.top]);
+    });
+
+    function drawPolygon(currentPoint = null) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (points.length === 0) return;
+
+        ctx.fillStyle = 'rgba(0, 150, 255, 0.8)';
+        ctx.strokeStyle = 'rgba(0, 150, 255, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(points[0][0], points[0][1]);
+
+        for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i][0], points[i][1]);
+        }
+
+        if (currentPoint) {
+            ctx.lineTo(currentPoint[0], currentPoint[1]);
+        }
+        ctx.stroke();
+
+        points.forEach(p => {
+            ctx.beginPath();
+            ctx.arc(p[0], p[1], 5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        if (currentPoint) {
+            ctx.beginPath();
+            ctx.arc(currentPoint[0], currentPoint[1], 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        if (points.length >= 3 && !currentPoint && !isDrawing) {
+            ctx.fillStyle = 'rgba(255, 100, 0, 0.2)';
+            ctx.beginPath();
+            ctx.moveTo(points[0][0], points[0][1]);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i][0], points[i][1]);
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+
+    // Сохранение координат на бэкенд (AJAX)
+    function saveZone() {
+        if (points.length < 3) {
+            alert('Нарисуйте полигон (минимум 3 точки)');
+            return;
+        }
+
+        let name = document.getElementById('zone_name').value.trim();
+        if (!name) name = "Зона " + ({{ camera.zones|length }} + 1);
+
+        let selectedClasses = [];
+        document.querySelectorAll('.cls-checkbox:checked').forEach(cb => {
+            selectedClasses.push(parseInt(cb.value));
+        });
+
+        if (selectedClasses.length === 0) {
+            alert('Выберите хотя бы один класс для отслеживания!');
+            return;
+        }
+
+        let selectedColor = document.getElementById('zone_color').value;
+        let zoneTime = document.getElementById('zone_time').value;
+
+        fetch('/api/add_zone/' + camId, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                points: points, width: canvas.width, height: canvas.height,
+                name: name, classes: selectedClasses, color: selectedColor,
+                alert_seconds: zoneTime // <--- НОВОЕ
+            })
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.status === 'ok') {
+                location.reload(); // Перезагружаем страницу чтобы увидеть новую зону
+            } else {
+                alert('Ошибка: ' + d.message);
+            }
+        });
+    }
+
+    function deleteZone(zoneId) {
+        if (!confirm('Удалить эту зону?')) return;
+
+        fetch('/api/delete_zone/' + camId + '/' + zoneId, {
+            method: 'POST'
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.status === 'ok') {
+                location.reload(); // Обновляем список
+            }
+        });
+    }
+
+    function clearDrawing() {
+        points = [];
+        isDrawing = false;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function updateStats() {
+        fetch('/stats/' + camId)
+        .then(r => r.json())
+        .then(d => {
+            if(d.status !== 'error') {
+                document.getElementById('stats').innerHTML = `
+                    Объектов в кадре (в зонах): ${d.objects}<br>
+                    Зафиксировано нарушений: ${d.violations}
+                `;
+            }
+        });
+    }
+
+    setInterval(updateStats, 2000);
+    updateStats();
+</script>
+{% endblock %}

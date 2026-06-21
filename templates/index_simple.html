@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Мониторинг</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+            font-family: Arial;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .camera-box {
+            background: #2d2d2d;
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        h2 {
+            color: #4fc3f7;
+            margin: 0;
+        }
+        .status {
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 14px;
+        }
+        .status.active {
+            background: #4caf50;
+        }
+        .status.inactive {
+            background: #f44336;
+        }
+        .video-container {
+            position: relative;
+            background: black;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: crosshair;
+        }
+        img {
+            width: 100%;
+            display: block;
+        }
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #4fc3f7;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #29b6f6;
+        }
+        button.red {
+            background: #f44336;
+        }
+        .stats {
+            margin-top: 15px;
+            padding: 15px;
+            background: #333;
+            border-radius: 5px;
+        }
+        .instructions {
+            margin-top: 20px;
+            padding: 15px;
+            background: #333;
+            border-radius: 5px;
+            color: #ddd;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="camera-box">
+            <div class="header">
+                <h2>{{ camera.name }}</h2>
+                <span id="polygonStatus" class="status {{ 'active' if camera.has_polygon else 'inactive' }}">
+                    {{ 'Зона задана' if camera.has_polygon else 'Зона не задана' }}
+                </span>
+            </div>
+
+            <div class="video-container">
+                <img id="video" src="{{ url_for('video_feed') }}" crossorigin="anonymous">
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <div class="controls">
+                <button onclick="saveZone()">Сохранить зону</button>
+                <button onclick="clearDrawing()">Очистить чертеж</button>
+                <button onclick="deleteZone()" class="red">Удалить зону</button>
+                <button onclick="resetViolations()" class="red">Сброс</button>
+            </div>
+
+            <div class="stats" id="stats">
+                Загрузка...
+            </div>
+
+            <div class="instructions">
+                <strong>Как настроить:</strong><br>
+                1. Кликайте ЛКМ по видео чтобы нарисовать зону (минимум 3 точки)<br>
+                2. Нажмите ПКМ или двойной клик для завершения<br>
+                3. Нажмите "Сохранить зону"<br>
+                4. Telegram бот будет присылать уведомления о нарушениях!<br>
+                <br>
+                <strong>Telegram:</strong> Проверьте что бот запущен и уведомления приходят
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const video = document.getElementById('video');
+        const ctx = canvas.getContext('2d');
+
+        let points = [];
+        let isDrawing = false;
+
+        video.onload = function() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        };
+
+        canvas.addEventListener('mousedown', function(e) {
+            if (!isDrawing) {
+                points = [];
+                isDrawing = true;
+            }
+            const rect = canvas.getBoundingClientRect();
+            points.push([e.clientX - rect.left, e.clientY - rect.top]);
+            drawPolygon();
+        });
+
+        canvas.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            if (isDrawing && points.length >= 3) {
+                isDrawing = false;
+                drawPolygon();
+            }
+        });
+
+        canvas.addEventListener('dblclick', function(e) {
+            if (isDrawing && points.length >= 3) {
+                isDrawing = false;
+                drawPolygon();
+            }
+        });
+
+        canvas.addEventListener('mousemove', function(e) {
+            if (!isDrawing) return;
+            const rect = canvas.getBoundingClientRect();
+            drawPolygon([e.clientX - rect.left, e.clientY - rect.top]);
+        });
+
+        function drawPolygon(currentPoint = null) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (points.length === 0) return;
+
+            ctx.fillStyle = 'rgba(0, 150, 255, 0.8)';
+            ctx.strokeStyle = 'rgba(0, 150, 255, 0.6)';
+            ctx.lineWidth = 2;
+
+            ctx.beginPath();
+            ctx.moveTo(points[0][0], points[0][1]);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i][0], points[i][1]);
+            }
+            if (currentPoint) {
+                ctx.lineTo(currentPoint[0], currentPoint[1]);
+            }
+            ctx.stroke();
+
+            points.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p[0], p[1], 5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            if (currentPoint) {
+                ctx.beginPath();
+                ctx.arc(currentPoint[0], currentPoint[1], 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            if (points.length >= 3 && !currentPoint && !isDrawing) {
+                ctx.fillStyle = 'rgba(255, 100, 0, 0.2)';
+                ctx.beginPath();
+                ctx.moveTo(points[0][0], points[0][1]);
+                for (let i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i][0], points[i][1]);
+                }
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+
+        function saveZone() {
+            if (points.length < 3) {
+                alert('Нарисуйте полигон (минимум 3 точки)');
+                return;
+            }
+
+            fetch('/update_zone', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    points: points,
+                    width: canvas.width,
+                    height: canvas.height
+                })
+            })
+            .then(r => r.json())
+            .then(d => {
+                if (d.status === 'ok') {
+                    alert('Зона сохранена! Telegram бот будет присылать уведомления');
+                    document.getElementById('polygonStatus').className = 'status active';
+                    document.getElementById('polygonStatus').textContent = 'Зона задана';
+                    points = [];
+                    isDrawing = false;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    updateStats();
+                }
+            });
+        }
+
+        function deleteZone() {
+            if (!confirm('Удалить зону?')) return;
+
+            fetch('/update_zone', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({points: [], width: canvas.width, height: canvas.height})
+            })
+            .then(r => r.json())
+            .then(d => {
+                if (d.status === 'ok') {
+                    alert('Зона удалена');
+                    document.getElementById('polygonStatus').className = 'status inactive';
+                    document.getElementById('polygonStatus').textContent = 'Зона не задана';
+                    points = [];
+                    isDrawing = false;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    updateStats();
+                }
+            });
+        }
+
+        function clearDrawing() {
+            points = [];
+            isDrawing = false;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function resetViolations() {
+            fetch('/reset', {method: 'POST'})
+            .then(() => {
+                alert('Статистика сброшена');
+                updateStats();
+            });
+        }
+
+        function updateStats() {
+            fetch('/stats')
+            .then(r => r.json())
+            .then(d => {
+                document.getElementById('stats').innerHTML = `
+                    <strong>Статистика:</strong><br>
+                    Зона: ${d.has_polygon ? '✅' : '❌'}<br>
+                    Объектов в зоне: ${d.objects}<br>
+                    Нарушений: ${d.violations}
+                `;
+            });
+        }
+
+        setInterval(updateStats, 2000);
+        updateStats();
+    </script>
+</body>
+</html>

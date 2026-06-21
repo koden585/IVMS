@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .analytics-controls {
+        display: flex; gap: 15px; align-items: center; margin-bottom: 20px;
+    }
+    .analytics-controls select {
+        padding: 10px; background: #333; color: white; border: 1px solid #555; border-radius: 5px; font-size: 14px;
+    }
+    .charts-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    }
+    .chart-container {
+        background: #222; padding: 20px; border-radius: 10px; height: 350px;
+        display: flex; justify-content: center; align-items: center;
+    }
+    @media (max-width: 900px) {
+        .charts-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+<div class="camera-box">
+    <h2>Аналитика и Отчеты</h2>
+    <p style="color:#aaa;">Статистика обнаружений и анализ трафика</p>
+
+    <div class="analytics-controls">
+        <select id="cam-select" onchange="loadAnalytics()">
+            <option value="all">Общая статистика (Все камеры)</option>
+            {% for cid, cname in hist_cameras.items() %}
+            <option value="{{ cid }}">{{ cname }}</option>
+            {% endfor %}
+        </select>
+        <button onclick="sendReport()" style="background: #4caf50; color: white;">Отправить отчет в Telegram</button>
+    </div>
+
+    <div class="charts-grid">
+        <div class="chart-container">
+            <canvas id="trendChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="pieChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    Chart.defaults.color = '#ccc'; // Светлый текст для темной темы
+    let trendChartInstance = null;
+    let pieChartInstance = null;
+
+    function loadAnalytics() {
+        const camId = document.getElementById('cam-select').value;
+
+        fetch(`/api/analytics_data?cam_id=${camId}`)
+            .then(res => res.json())
+            .then(data => {
+                // Обновляем график по дням
+                const ctxTrend = document.getElementById('trendChart').getContext('2d');
+                if (trendChartInstance) trendChartInstance.destroy();
+
+                trendChartInstance = new Chart(ctxTrend, {
+                    type: 'line',
+                    data: {
+                        labels: data.dates,
+                        datasets:[{
+                            label: 'Событий (шт)',
+                            data: data.trend_data,
+                            borderColor: '#4fc3f7',
+                            backgroundColor: 'rgba(79, 195, 247, 0.2)',
+                            tension: 0.3, fill: true
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Динамика по дням' } } }
+                });
+
+                // Обновляем круговую диаграмму по классам
+                const ctxPie = document.getElementById('pieChart').getContext('2d');
+                if (pieChartInstance) pieChartInstance.destroy();
+
+                pieChartInstance = new Chart(ctxPie, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.classes,
+                        datasets:[{
+                            data: data.classes_data,
+                            backgroundColor:['#4fc3f7', '#ff5252', '#4caf50', '#ffa726', '#ba68c8'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Распределение объектов' } } }
+                });
+            });
+    }
+
+    function sendReport() {
+        const camId = document.getElementById('cam-select').value;
+        const btn = event.target;
+        btn.textContent = "Отправка...";
+        btn.disabled = true;
+
+        fetch('/api/send_report', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ cam_id: camId })
+        }).then(r => r.json()).then(res => {
+            if(res.status === 'ok') {
+                // Выводим сообщение в консоль, а не в alert
+                console.log(res.message);
+            } else {
+                alert("Ошибка: " + res.message);
+            }
+            // Мгновенно возвращаем кнопку в исходное состояние
+            btn.textContent = "Отправить отчет в Telegram";
+            btn.disabled = false;
+        });
+    }
+
+    // Загружаем графики при открытии страницы
+    loadAnalytics();
+</script>
+{% endblock %}

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Система Видеоаналитики</title>
+    <!-- Библиотека графиков -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Сбрасываем отступы и делаем экран на 100% высоты */
+        body { margin: 0; padding: 0; background: #1a1a1a; color: white; font-family: Arial, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+
+        /* Левая панель навигации */
+        .sidebar {
+            width: 260px;
+            background: #222;
+            padding: 20px 0;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            border-right: 1px solid #333;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+        }
+
+        .sidebar h2 { text-align: center; color: #4fc3f7; margin-top: 0; margin-bottom: 30px; font-size: 22px; }
+
+        /* Заголовки секций в меню */
+        .section-title { color: #888; font-size: 11px; text-transform: uppercase; margin: 20px 20px 10px 20px; letter-spacing: 1px; font-weight: bold; }
+
+        /* Ссылки в меню */
+        .sidebar a { color: #ddd; text-decoration: none; padding: 12px 20px; display: block; border-left: 4px solid transparent; transition: 0.2s; font-size: 15px;}
+        .sidebar a:hover { background: #333; color: #fff; }
+        /* Подсветка активной вкладки */
+        .sidebar a.active { background: #333; color: #4fc3f7; border-left: 4px solid #4fc3f7; font-weight: bold; }
+
+        /* Основная область */
+        .main-content { flex: 1; padding: 30px; overflow-y: auto; background: #1a1a1a; }
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        /* Контентная часть */
+        .camera-box { background: #2d2d2d; border-radius: 10px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
+        h2, h3 { color: #4fc3f7; margin-top: 0; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .status { padding: 5px 15px; border-radius: 15px; font-size: 14px; font-weight: bold;}
+        .status.active { background: #4caf50; color: white; }
+        .status.inactive { background: #f44336; color: white;}
+
+        button { padding: 10px 20px; background: #4fc3f7; color: #1a1a1a; font-weight:bold; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: 0.2s;}
+        button:hover { background: #29b6f6; }
+        button.red { background: #f44336; color: white;}
+        button.red:hover { background: #d32f2f; }
+
+        /* Скроллбар */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+    </style>
+</head>
+<body>
+
+    <!-- Левая панель -->
+    <div class="sidebar">
+        <div class="section-title">Главное меню</div>
+        <a href="/" class="{{ 'active' if request.path == '/' else '' }}">Дашборд</a>
+        <a href="/screenshots" class="{{ 'active' if request.path == '/screenshots' else '' }}">Архив инцидентов</a>
+        <a href="/analytics" class="{{ 'active' if request.path == '/analytics' else '' }}">Аналитика</a>
+        <a href="/settings" class="{{ 'active' if request.path == '/settings' else '' }}">Настройки</a>
+
+        <!-- Динамическая сборка активных видеопотоков -->
+        <div class="section-title">Видеопотоки ({{ cameras|length }})</div>
+        {% for c_id, c in cameras.items() %}
+        <a href="/camera/{{ c_id }}" class="{{ 'active' if request.path == '/camera/' ~ c_id else '' }}">
+            {{ c.name }}
+        </a>
+        {% endfor %}
+    </div>
+
+    <!-- Правая панель -->
+    <div class="main-content">
+        <div class="container">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+</body>
+</html>

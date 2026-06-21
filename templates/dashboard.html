@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Клиент SocketIO -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+
+<style>
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px; }
+    .cam-card { position: relative; background: #000; border-radius: 5px; overflow: hidden; }
+    .cam-card img { width: 100%; display: block; aspect-ratio: 16/9; object-fit: cover; }
+</style>
+
+<div class="camera-box">
+    <h2>Обзор всех камер</h2>
+    <p style="color:#aaa;">Нажмите на название камеры для настройки зон.</p>
+</div>
+
+<div class="grid">
+    {% for c_id, c in cameras.items() %}
+    <div class="camera-box" style="padding: 15px;">
+        <h3><a href="/camera/{{ c_id }}" style="color: #4fc3f7; text-decoration: none;">{{ c.name }}</a></h3>
+        <div class="cam-card">
+            <!-- Canvas для бинарного потока от сокета -->
+            <img id="vid-{{ c_id }}" alt="Загрузка потока...">
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+    // Подключаемся к серверу через 1 WebSocket соединение
+    const socket = io();
+
+    {% for c_id in cameras.keys() %}
+    // Асинхронное получение кадров и создание Blob URL
+    socket.on('stream_{{ c_id }}', function(data) {
+        const imgElement = document.getElementById('vid-{{ c_id }}');
+        if (imgElement) {
+            // Превращаем полученные байты в картинку
+            const blob = new Blob([data.image], {type: "image/jpeg"});
+            const url = URL.createObjectURL(blob);
+
+            // Удаляем старую картинку из памяти, чтобы браузер не "упал"
+            const oldUrl = imgElement.src;
+            imgElement.src = url;
+            // Освобождаем память браузера от старого кадра
+            if (oldUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(oldUrl);
+            }
+        }
+    });
+    {% endfor %}
+</script>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .panel { background: #222; padding: 20px; border-radius: 10px; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+
+    /* Форма добавления (в одну линию) */
+    .add-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; align-items: end; }
+    .form-group { display: flex; flex-direction: column; }
+    .form-group label { margin-bottom: 5px; color: #aaa; font-size: 13px; }
+    .form-group input, .form-group select { padding: 10px; background: #333; color: white; border: 1px solid #555; border-radius: 5px; outline: none;}
+    .btn-add { background: #4caf50; color: white; padding: 10px; font-weight: bold; border: none; border-radius: 5px; cursor: pointer; height: 38px; transition: 0.2s;}
+    .btn-add:hover { background: #43a047; }
+
+    /* Сетка камер (Плитки по 4-5 в ряд) */
+    .cameras-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
+
+    /* Дизайн карточки камеры */
+    .cam-card { background: #333; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; border-top: 4px solid #4fc3f7; transition: 0.2s; }
+    .cam-card:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.4); }
+
+    .cam-title { display: flex; justify-content: space-between; align-items: center; font-size: 17px; font-weight: bold; margin-bottom: 5px; color: #fff;}
+    .cam-id { font-size: 12px; color: #4fc3f7; margin-bottom: 12px; }
+
+    /* Обрезаем длинные ссылки троеточием! */
+    .cam-info { font-size: 13px; color: #aaa; margin-bottom: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #2a2a2a; padding: 8px; border-radius: 5px;}
+
+    .cam-actions button { width: 100%; padding: 10px; font-size: 13px; }
+</style>
+
+<div class="camera-box" style="margin-bottom: 20px;">
+    <h2>Управление камерами</h2>
+    <p style="color:#aaa;">Добавление новых потоков и управление существующими</p>
+</div>
+
+<!-- Панель добавления -->
+<div class="panel">
+    <h3 style="margin-bottom: 20px;">Добавить новую камеру</h3>
+    <div class="add-form">
+        <div class="form-group">
+            <label>ID Камеры (напр. cam5):</label>
+            <input type="text" id="new_id" placeholder="cam5">
+        </div>
+        <div class="form-group">
+            <label>Название (для меню):</label>
+            <input type="text" id="new_name" placeholder="Камера Склад">
+        </div>
+        <div class="form-group">
+            <label>RTSP или локальный файл:</label>
+            <input type="text" id="new_url" placeholder="rtsp://...">
+        </div>
+        <div class="form-group">
+            <label>Telegram уведомления:</label>
+            <select id="new_tg">
+                <option value="true">Включено</option>
+                <option value="false">Выключено</option>
+            </select>
+        </div>
+        <button class="btn-add" onclick="addCamera()">Добавить</button>
+    </div>
+</div>
+
+<!-- Панель активных камер (плитки) -->
+<div class="panel">
+    <h3 style="margin-bottom: 20px;">Активные камеры ({{ cameras|length }})</h3>
+
+    <div class="cameras-grid">
+        {% for c_id, c in cameras.items() %}
+        <div class="cam-card">
+            <div class="cam-title">
+                <span>{{ c.name }}</span>
+                <span style="cursor: pointer; padding: 5px; background: #444; border-radius: 4px; font-size: 14px;" onclick="renameCamera('{{ c_id }}', '{{ c.name }}')" title="Переименовать">Изменить</span>
+            </div>
+
+            <div class="cam-id">ID: {{ c_id }}</div>
+
+            <!-- Информационный блок с обрезанной ссылкой -->
+            <div class="cam-info" title="{{ c.url }}">
+                {{ c.url }}<br>
+            </div>
+
+            <div class="cam-actions">
+                <button class="red" onclick="deleteCamera('{{ c_id }}')">Удалить камеру</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+    // AJAX добавление/удаление
+    function addCamera() {
+        const id = document.getElementById('new_id').value.trim();
+        if(!id) { alert("Введите ID камеры!"); return; }
+
+        const payload = {
+            cam_id: id,
+            name: document.getElementById('new_name').value,
+            url: document.getElementById('new_url').value,
+            send_tg: document.getElementById('new_tg').value === "true"
+        };
+
+        fetch('/api/add_camera', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        }).then(r => r.json()).then(res => {
+            if(res.status === 'ok') location.reload();
+        });
+    }
+
+    async function deleteCamera(camId) {
+        if (!confirm("Точно удалить эту камеру?")) return;
+        try {
+            const response = await fetch(`/api/delete_camera/${camId}`, { method: "POST" });
+            const data = await response.json();
+            if (data.status === "ok") {
+                location.reload();
+            } else {
+                alert("Ошибка удаления");
+            }
+        } catch (err) {
+            console.error("Ошибка:", err);
+            alert("Ошибка соединения");
+        }
+    }
+
+    function renameCamera(camId, oldName) {
+        const newName = prompt("Введите новое название для камеры:", oldName);
+        if (newName && newName.trim() !== "" && newName !== oldName) {
+            fetch(`/api/rename_camera/${camId}`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name: newName.trim() })
+            })
+            .then(r => r.json())
+            .then(res => {
+                if (res.status === 'ok') location.reload();
+            });
+        }
+    }
+</script>
+{% endblock %}
