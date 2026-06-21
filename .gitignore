@@ -26,4 +26,4 @@ Thumbs.db
 *.log
 
 # Локальная база данных
-vidmon_sys.db
+# vidmon_sys.db
